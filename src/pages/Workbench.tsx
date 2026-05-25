@@ -132,7 +132,6 @@ export default function Workbench() {
     }
   }
 
-  const selected = selectedIdx !== null ? articles[selectedIdx] : null;
   const draftCount = drafts.filter((d) => d.status === 'draft').length;
   const publishedCount = drafts.filter((d) => d.status === 'published').length;
 
