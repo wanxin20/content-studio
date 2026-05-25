@@ -1,0 +1,20 @@
+[Unit]
+Description=content-studio API · Express LLM proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/content-studio
+Environment="NODE_ENV=production"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# .env 由 server/index.ts 内部主动加载 (process.loadEnvFile)
+ExecStart=/usr/bin/node --import tsx server/index.ts
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/root/content-studio/api.log
+StandardError=append:/root/content-studio/api.log
+
+[Install]
+WantedBy=multi-user.target
