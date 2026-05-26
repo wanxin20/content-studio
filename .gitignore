@@ -34,9 +34,10 @@ dev-server.log
 deploy/content-studio-api.service
 
 # --- Runtime data ---
-# Drafts and other user-generated content stored locally by the studio server
-data/
-!data/.gitkeep
+# Drafts and other user-generated content stored locally by the studio server.
+# Use leading slash so this only matches root-level data/, NOT src/data/ etc.
+/data/
+!/data/.gitkeep
 
 # --- Visual companion (brainstorming sessions) ---
 .superpowers/

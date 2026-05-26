@@ -6,7 +6,6 @@ import { MODULES } from '../../lib/module-meta';
 import { classNames } from '../../lib/picsum';
 import { streamRewriteArticle, createDraft, type RewriteResult } from '../../lib/studio';
 import { useAppStore } from '../../store/useAppStore';
-import type { Article } from '../../types';
 
 interface StylePreset {
   id: string;
