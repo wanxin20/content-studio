@@ -28,6 +28,11 @@ dev-server.log
 .env.production.local
 *.local
 
+# --- Deploy unit (machine-specific paths) ---
+# 服务器上各自维护一份 (node 路径、工作目录、用户名都不同)。
+# 仓库只保留 .example 模板，复制后按服务器情况改 paths。
+deploy/content-studio-api.service
+
 # --- Runtime data ---
 # Drafts and other user-generated content stored locally by the studio server
 data/
