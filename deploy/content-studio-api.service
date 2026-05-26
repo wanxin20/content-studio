@@ -8,9 +8,11 @@ User=root
 Group=root
 WorkingDirectory=/root/content-studio
 Environment="NODE_ENV=production"
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# 如果 node 不在 /usr/bin/node (比如用 nvm 装的),把下面 PATH 第一段
+# 和 ExecStart 的绝对路径改成 `which node` 出来的实际路径
+Environment="PATH=/root/.nvm/versions/node/v25.4.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 # .env 由 server/index.ts 内部主动加载 (process.loadEnvFile)
-ExecStart=/usr/bin/node --import tsx server/index.ts
+ExecStart=/root/.nvm/versions/node/v25.4.0/bin/node --import tsx server/index.ts
 Restart=on-failure
 RestartSec=5s
 StandardOutput=append:/root/content-studio/api.log

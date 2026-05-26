@@ -131,6 +131,66 @@ app.get('/studio/health', (_req, res) => {
   });
 });
 
+// ============== Sources (proxied from we-mp-rss) ==============
+const WEMPRSS_BASE_URL = (process.env.WEMPRSS_BASE_URL || 'http://127.0.0.1:8001').replace(/\/$/, '');
+const WEMPRSS_AK = process.env.WEMPRSS_AK || '';
+const WEMPRSS_SK = process.env.WEMPRSS_SK || '';
+
+function wempressAuthHeader(): Record<string, string> {
+  return WEMPRSS_AK && WEMPRSS_SK
+    ? { Authorization: `AK-SK ${WEMPRSS_AK}:${WEMPRSS_SK}` }
+    : {};
+}
+
+interface CachedSources {
+  ts: number;
+  data: Array<{ id: string; name: string; platform: 'wechat'; cover?: string; intro?: string }>;
+}
+let sourcesCache: CachedSources | null = null;
+const SOURCES_CACHE_TTL = 60_000; // 60s
+
+app.get('/studio/sources', async (_req, res) => {
+  // Serve from cache if fresh
+  if (sourcesCache && Date.now() - sourcesCache.ts < SOURCES_CACHE_TTL) {
+    return res.json({ ok: true, cached: true, sources: sourcesCache.data });
+  }
+  try {
+    const r = await fetch(`${WEMPRSS_BASE_URL}/api/v1/wx/mps?limit=100`, {
+      headers: wempressAuthHeader(),
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      return res.status(502).json({
+        ok: false,
+        error: `we-mp-rss returned ${r.status}: ${txt.slice(0, 200)}`,
+        hint:
+          r.status === 401
+            ? '需要在 .env 设置 WEMPRSS_AK / WEMPRSS_SK(在 we-mp-rss 管理后台 → Access Key 页创建)'
+            : undefined,
+      });
+    }
+    const body = await r.json();
+    // Standard shape: { code: 0, data: { list: [...] } }
+    const list: any[] = body?.data?.list ?? body?.list ?? body?.data ?? body ?? [];
+    if (!Array.isArray(list)) {
+      return res.json({ ok: true, sources: [] });
+    }
+    const sources = list.map((mp) => ({
+      id: String(mp.id ?? mp.mp_id ?? ''),
+      name: String(mp.mp_name ?? mp.name ?? '未命名'),
+      platform: 'wechat' as const,
+      cover: mp.mp_cover ?? undefined,
+      intro: mp.mp_intro ?? undefined,
+    })).filter((s) => s.id);
+
+    sourcesCache = { ts: Date.now(), data: sources };
+    res.json({ ok: true, sources });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(502).json({ ok: false, error: msg });
+  }
+});
+
 // LLM rewrite
 const DEFAULT_PROMPT = `你是一位资深公众号编辑。请把下面这篇原文改写一遍,保持核心观点和事实数据,但换一种叙述风格:语气更亲切,更适合通勤路上阅读,标题可重新拟。
 
@@ -155,40 +215,65 @@ app.post('/studio/llm/rewrite', async (req, res) => {
       article.link ? `原文链接:${article.link}\n` : ''
     }\n${article.content}`;
 
+  // === SSE streaming ===
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // 防 nginx 缓冲
+  res.flushHeaders?.();
+
+  const send = (obj: unknown) => {
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  };
+
+  let cancelled = false;
+  req.on('close', () => {
+    cancelled = true;
+  });
+
   try {
-    const resp = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: profile.model,
       max_tokens: 8000,
       messages: [{ role: 'user', content: userMessage }],
     });
 
-    // Concat text blocks
-    const textParts: string[] = [];
-    for (const block of resp.content) {
-      if (block.type === 'text') textParts.push(block.text);
+    let full = '';
+    for await (const event of stream) {
+      if (cancelled) {
+        stream.controller.abort();
+        return;
+      }
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        const t = event.delta.text;
+        full += t;
+        send({ type: 'delta', text: t });
+      }
     }
-    const rewritten = textParts.join('\n').trim();
 
-    // Extract title from first H1 if present
-    const titleMatch = rewritten.match(/^#\s+(.+)$/m);
+    const finalMsg = await stream.finalMessage();
+    const titleMatch = full.match(/^#\s+(.+)$/m);
     const rewrittenTitle = titleMatch ? titleMatch[1].trim() : `${article.title}（改写版）`;
-    const body = titleMatch ? rewritten.replace(titleMatch[0], '').trim() : rewritten;
+    const body = titleMatch ? full.replace(titleMatch[0], '').trim() : full.trim();
 
     console.log(
       `[LLM] ✓ rewrite ok: "${article.title.slice(0, 30)}…" → "${rewrittenTitle.slice(0, 30)}…" ` +
-        `(in=${resp.usage?.input_tokens ?? '?'} out=${resp.usage?.output_tokens ?? '?'})`,
+        `(in=${finalMsg.usage?.input_tokens ?? '?'} out=${finalMsg.usage?.output_tokens ?? '?'}) [stream]`,
     );
-    res.json({
+    send({
+      type: 'done',
       rewrittenTitle,
       rewrittenContent: body,
-      raw: rewritten,
+      raw: full,
       model: profile.model,
-      usage: resp.usage,
+      usage: finalMsg.usage,
     });
+    res.end();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[LLM] error:', msg);
-    res.status(500).json({ error: msg });
+    console.error('[LLM] stream error:', msg);
+    send({ type: 'error', error: msg });
+    res.end();
   }
 });
 

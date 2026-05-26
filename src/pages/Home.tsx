@@ -1,557 +1,285 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listDrafts, studioHealth } from '../lib/studio';
-import BackgroundFX from '../components/BackgroundFX';
+import { ArrowRight, Plus, Clock, FileText } from 'lucide-react';
+import { MODULES, MODULE_ORDER, MODULE_LIVE, HOME_CARDS, type ModuleKey, type HomeCard } from '../lib/module-meta';
+import { BRANDS } from '../lib/brand';
+import { listDrafts } from '../lib/studio';
+import type { Draft } from '../types';
+import { classNames } from '../lib/picsum';
 
-type CardStatus = 'live' | 'beta' | 'soon';
-type Accent = 'cyan' | 'magenta' | 'acid';
-
-interface Feature {
-  code: string;
-  zh: string;
-  desc: string;
-  to: string;
-  status: CardStatus;
-}
-
-interface Section {
-  index: string;
-  name: string;
-  ascii: string;
-  english: string;
-  tagline: string;
-  accent: Accent;
-  features: Feature[];
-}
-
-const SECTIONS: Section[] = [
-  {
-    index: '01',
-    name: '微信公众号',
-    ascii: 'WEIXIN',
-    english: 'Public Account · Network',
-    tagline: '接入 RSS / 改写 / 一键发到草稿箱。',
-    accent: 'cyan',
-    features: [
-      {
-        code: 'SUBSCRIBE',
-        zh: '订阅采集',
-        desc: '接入 we-mp-rss,实时跟踪公众号文章流。',
-        to: '/wechat/feeds',
-        status: 'live',
-      },
-      {
-        code: 'REWRITE',
-        zh: 'AI 改写',
-        desc: '一键改写文章,保留事实,换风格、换语气、换标题。',
-        to: '/wechat/drafts',
-        status: 'live',
-      },
-      {
-        code: 'PUBLISH',
-        zh: '草稿发布',
-        desc: '审稿后发到微信公众号后台草稿箱。',
-        to: '/wechat/published',
-        status: 'beta',
-      },
-    ],
-  },
-  {
-    index: '02',
-    name: '小红书',
-    ascii: 'XIAOHONGSHU',
-    english: 'RedNote · Visual Stack',
-    tagline: '抓取笔记 / 重写文案 / 生成图文。',
-    accent: 'magenta',
-    features: [
-      {
-        code: 'COLLECT',
-        zh: '数据获取',
-        desc: '抓取目标账号 / 话题的笔记内容、配图、互动数据。',
-        to: '/xhs/feeds',
-        status: 'soon',
-      },
-      {
-        code: 'REWRITE',
-        zh: '图文改写',
-        desc: '重写文案、重排图序、套用爆款标题模板。',
-        to: '/xhs/rewrite',
-        status: 'soon',
-      },
-      {
-        code: 'GENERATE',
-        zh: '图文生成',
-        desc: '从选题自动生成 6–9 张小红书风格笔记图。',
-        to: '/xhs/generate',
-        status: 'soon',
-      },
-    ],
-  },
-  {
-    index: '03',
-    name: '抖音',
-    ascii: 'DOUYIN',
-    english: 'Short Video · Pipeline',
-    tagline: '下载视频 / 提脚本 / 数字人复述。',
-    accent: 'acid',
-    features: [
-      {
-        code: 'INGEST',
-        zh: '视频获取',
-        desc: '下载短视频原文件,保留封面与互动快照。',
-        to: '/douyin/feeds',
-        status: 'soon',
-      },
-      {
-        code: 'TRANSCRIBE',
-        zh: '文案提取',
-        desc: 'ASR 提取字幕脚本,自动分段与人物标记。',
-        to: '/douyin/script',
-        status: 'soon',
-      },
-      {
-        code: 'AVATAR',
-        zh: '数字人生成',
-        desc: '用提取出的脚本驱动数字人,生成新短视频。',
-        to: '/douyin/avatar',
-        status: 'soon',
-      },
-    ],
-  },
-];
-
-const ACCENT_HEX: Record<Accent, string> = {
-  cyan: '#00E5FF',
-  magenta: '#FF2D55',
-  acid: '#A3FF12',
-};
+const SECTIONS: Exclude<ModuleKey, 'home'>[] = ['library', 'text', 'multimodal', 'manage'];
 
 export default function Home() {
-  const [stats, setStats] = useState({ sources: 2, drafts: 0, published: 0 });
-  const [model, setModel] = useState<string>('—');
-  const [clock, setClock] = useState<string>('');
-
-  useEffect(() => {
-    listDrafts()
-      .then((ds) => {
-        setStats({
-          sources: 2,
-          drafts: ds.filter((d) => d.status === 'draft').length,
-          published: ds.filter((d) => d.status === 'published').length,
-        });
-      })
-      .catch(() => {});
-    studioHealth().then((h) => h && setModel(h.llm.model));
-
-    const tick = () => {
-      const d = new Date();
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      const ss = String(d.getSeconds()).padStart(2, '0');
-      setClock(`${hh}:${mm}:${ss}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   return (
-    <div className="relative min-h-screen bg-bg text-fg font-sans overflow-hidden">
-      <div className="fixed inset-0 grid-bg opacity-50 pointer-events-none animate-drift z-0" aria-hidden />
-      <BackgroundFX palette="home" />
-
-      <div className="relative z-10">
-        <TopNav clock={clock} />
-
-        {/* HERO */}
-        <section className="max-w-7xl mx-auto px-8 pt-20 pb-24 relative">
-          <div className="grid grid-cols-12 gap-8 items-start">
-            <div className="col-span-12 lg:col-span-7 animate-fade-up [animation-delay:60ms]">
-              <div className="flex items-center gap-3 mb-8">
-                <span className="status-dot" />
-                <span className="bracket text-cyan glow-cyan">SYS · LIVE</span>
-                <span className="font-mono text-[10px] uppercase tracking-widest2 text-fg-faint">
-                  RUNTIME ·
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-widest2 text-amber tabular">
-                  {clock}
-                </span>
-              </div>
-
-              <h1 className="font-sans font-bold leading-[0.92] tracking-tightish text-balance">
-                <span className="block text-[clamp(36px,6vw,80px)] text-fg">
-                  <span className="font-mono text-fg-faint mr-3">&lt;</span>
-                  STUDIO
-                  <span className="font-mono text-fg-faint ml-3">/&gt;</span>
-                </span>
-                <span className="block text-[clamp(48px,8vw,120px)] font-zh font-black text-fg mt-2 glow-cyan">
-                  内容工坊
-                </span>
-              </h1>
-
-              <p className="font-zh text-lg text-fg-muted mt-10 max-w-xl leading-relaxed">
-                端到端内容生产流水线 ——
-                从 <span className="text-cyan glow-cyan">抓取</span>,
-                到 <span className="text-magenta glow-mag">改写</span>,
-                再到 <span className="text-acid glow-acid">分发</span>。
-                <br />
-                <span className="font-mono text-sm text-fg-faint tracking-wider">
-                  &nbsp;&nbsp;&nbsp;&nbsp;// 不是一堆零碎工具,而是一台连贯的机器。
-                </span>
-              </p>
-            </div>
-
-            {/* Right: HUD readout panel */}
-            <div className="col-span-12 lg:col-span-5 animate-fade-up [animation-delay:200ms]">
-              <div className="relative bg-bg-panel/80 border border-edge backdrop-blur-sm">
-                <div className="absolute inset-0 grid-bg-fine opacity-40 pointer-events-none" />
-
-                {/* Corner ticks for the panel itself */}
-                <span className="absolute top-0 left-0 w-3 h-px bg-cyan/60" />
-                <span className="absolute top-0 left-0 w-px h-3 bg-cyan/60" />
-                <span className="absolute top-0 right-0 w-3 h-px bg-cyan/60" />
-                <span className="absolute top-0 right-0 w-px h-3 bg-cyan/60" />
-                <span className="absolute bottom-0 left-0 w-3 h-px bg-cyan/60" />
-                <span className="absolute bottom-0 left-0 w-px h-3 bg-cyan/60" />
-                <span className="absolute bottom-0 right-0 w-3 h-px bg-cyan/60" />
-                <span className="absolute bottom-0 right-0 w-px h-3 bg-cyan/60" />
-
-                {/* Header */}
-                <div className="relative px-5 py-3 border-b border-edge flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] text-cyan glow-cyan tracking-widest2">
-                      SYS · STATS
-                    </span>
-                    <span className="font-mono text-[9px] text-fg-dim">REV 003</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="status-dot amber" />
-                    <span className="font-mono text-[10px] text-amber tracking-widest2">REC</span>
-                  </div>
-                </div>
-
-                {/* 3-column HUD readout */}
-                <div className="relative grid grid-cols-3 divide-x divide-edge">
-                  <StatCol label="SOURCES"   value={stats.sources}   unit="个" accent="cyan"  />
-                  <StatCol label="DRAFTS"    value={stats.drafts}    unit="篇" accent="amber" />
-                  <StatCol label="PUBLISHED" value={stats.published} unit="篇" accent="acid"  />
-                </div>
-
-                {/* Footer */}
-                <div className="relative px-5 py-3 border-t border-edge flex items-center justify-between">
-                  <div className="flex items-center gap-2 font-mono text-[10px] tracking-wider">
-                    <span className="text-fg-dim">LLM</span>
-                    <span className="text-fg-dim">·</span>
-                    <span className="text-fg">{model}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="status-dot" />
-                    <span className="font-mono text-[10px] text-cyan glow-cyan tracking-widest2">READY</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <Divider />
-
-        {/* SECTIONS */}
-        <div className="max-w-7xl mx-auto px-8">
-          {SECTIONS.map((s, i) => (
-            <SectionBlock key={s.index} section={s} animDelay={300 + i * 120} />
-          ))}
-        </div>
-
-        {/* FOOTER */}
-        <footer className="max-w-7xl mx-auto px-8 pt-16 pb-12">
-          {/* Amber accent rule above footer */}
-          <div className="flex items-center gap-3 mb-6">
-            <span className="h-px w-12 bg-amber/60" style={{ boxShadow: '0 0 8px rgba(255,184,0,0.4)' }} />
-            <span className="font-mono text-[10px] tracking-widest2 text-amber">SIGNAL OK</span>
-            <span className="flex-1 hairline" />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-y-4 gap-x-8 font-mono text-[10px] uppercase tracking-widest2 text-fg-faint">
-            <Cell label="NODE" value="LOCALHOST" />
-            <Cell label="DATA" value=":8001" />
-            <Cell label="MODEL" value={model} />
-            <Cell label="UPTIME" value={clock} accent="amber" />
-            <Cell label="REV" value="v0.3" />
-          </div>
-          <div className="mt-8 font-zh italic text-fg-faint text-sm tracking-wider">
-            &nbsp;&nbsp;&nbsp;&nbsp;<span className="text-amber/70">&gt;</span> 故事才是人类传递知识的母语。
-          </div>
-        </footer>
-      </div>
+    <div className="space-y-7 sm:space-y-8">
+      <Hero />
+      <EnterWorkbench />
+      <AllFeatures />
+      <RecentDrafts />
     </div>
   );
 }
 
-// ============== StatCol ==============
-type StatAccent = 'cyan' | 'magenta' | 'acid' | 'amber';
-function StatCol({ label, value, unit, accent }: { label: string; value: number; unit: string; accent: StatAccent }) {
-  const colors = {
-    cyan:    { text: 'text-cyan',    glow: 'glow-cyan', bar: '#00E5FF', glowOn: true  },
-    magenta: { text: 'text-magenta', glow: 'glow-mag',  bar: '#FF2D55', glowOn: true  },
-    acid:    { text: 'text-acid',    glow: 'glow-acid', bar: '#A3FF12', glowOn: true  },
-    amber:   { text: 'text-amber',   glow: '',          bar: '#FFB800', glowOn: false },
-  } as const;
-  const c = colors[accent];
+/* === 1. Hero === */
+function Hero() {
   return (
-    <div className="relative px-5 py-5 flex flex-col items-start gap-2 group">
-      {/* Label */}
-      <div className="font-mono text-[10px] uppercase tracking-widest2 text-fg-faint">
-        {label}
+    <section className="card p-5 sm:p-7 bg-gradient-to-br from-white to-zinc-50">
+      <p className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Atelier · 内容创作工作台</p>
+      <h1 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900">
+        今天想创作什么？
+      </h1>
+      <p className="mt-2 text-sm sm:text-base text-zinc-500 max-w-xl">
+        当前已上线：<b className="text-zinc-900">微信公众号数据源</b> + <b className="text-zinc-900">文本改写</b>。其他模块陆续开放。
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Link to="/library/weixin" className="btn-primary bg-zinc-900 hover:bg-zinc-800">
+          去看公众号文章 <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+        <Link to="/text/rewrite" className="btn-outline">
+          直接改写一篇
+        </Link>
       </div>
-
-      {/* Big number + unit pinned right next to it */}
-      <div className="flex items-baseline gap-1.5 mt-1">
-        <span className={`font-mono tabular text-[44px] ${c.text} ${c.glow} font-medium leading-none`}>
-          {String(value).padStart(2, '0')}
-        </span>
-        <span className="font-zh text-fg-muted text-[11px]">{unit}</span>
-      </div>
-
-      {/* Accent bar */}
-      <div
-        className="h-px w-8 mt-2"
-        style={{
-          background: c.bar,
-          boxShadow: c.glowOn ? `0 0 6px ${c.bar}` : 'none',
-        }}
-      />
-
-      {/* Tiny status under bar */}
-      <div className="font-mono text-[9px] tracking-widest2 text-fg-dim mt-0.5">
-        {value === 0 ? '— —' : 'OK'}
-      </div>
-    </div>
+    </section>
   );
 }
 
-// ============== Cell ==============
-function Cell({ label, value, accent }: { label: string; value: string; accent?: 'amber' }) {
-  const cls = accent === 'amber' ? 'text-amber' : 'text-fg';
-  return (
-    <div>
-      <div className="text-fg-dim text-[9px] mb-1">{label}</div>
-      <div className={`text-[11px] tabular ${cls}`}>{value}</div>
-    </div>
-  );
-}
-
-// ============== Section Block ==============
-function SectionBlock({ section, animDelay }: { section: Section; animDelay: number }) {
-  const accentHex = ACCENT_HEX[section.accent];
-  const dotCls = section.accent === 'cyan' ? '' : section.accent === 'magenta' ? 'mag' : 'acid';
-  const glowCls = section.accent === 'cyan' ? 'glow-cyan' : section.accent === 'magenta' ? 'glow-mag' : 'glow-acid';
+/* === 2. 进入工作台（5 个大入口卡）=== */
+function EnterWorkbench() {
+  const modules = MODULE_ORDER.filter((k) => k !== 'home').map((k) => MODULES[k]);
 
   return (
-    <section
-      className="py-16 md:py-24 border-t border-edge animate-fade-up relative"
-      style={{ animationDelay: `${animDelay}ms` }}
-    >
-      {/* Section label strip */}
-      <div className="flex items-center gap-4 mb-12">
-        <span
-          className={`font-mono text-sm font-medium tracking-widest2 ${glowCls}`}
-          style={{ color: accentHex }}
-        >
-          [{section.index}]
-        </span>
-        <span className="font-mono text-xs tracking-widest2 text-fg-muted">
-          {section.ascii}
-        </span>
-        <span className="text-fg-dim font-mono text-xs">·</span>
-        <span className="font-mono text-xs text-fg-faint italic">{section.english}</span>
-        <div className="flex-1 h-px ml-3" style={{ background: `linear-gradient(to right, ${accentHex}40, transparent)` }} />
-      </div>
+    <section>
+      <SectionHeader title="进入工作台" subtitle="挑一个模块开工——灰色卡片表示模块尚未开放" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {modules.map((m) => {
+          const Icon = m.icon;
+          const live = MODULE_LIVE[m.key as Exclude<ModuleKey, 'home'>];
 
-      <div className="grid grid-cols-12 gap-8">
-        {/* Left: chapter heading */}
-        <div className="col-span-12 lg:col-span-4">
-          <div className="sticky top-8 space-y-6">
-            <div className="flex items-baseline gap-4">
-              <span className={`status-dot ${dotCls}`} />
-              <span className="bracket text-fg-muted">CHAPTER</span>
-            </div>
-            <h2
-              className="font-zh font-black text-6xl text-fg leading-[0.9] tracking-tightish"
-              style={{ textShadow: `0 0 24px ${accentHex}40` }}
+          if (live) {
+            return (
+              <Link
+                key={m.key}
+                to={m.path}
+                className="card p-4 hover:shadow-sm hover:-translate-y-0.5 transition group flex flex-col"
+              >
+                <div className={classNames('w-9 h-9 rounded-lg flex items-center justify-center text-white', m.bg)}>
+                  <Icon className="w-4.5 h-4.5" />
+                </div>
+                <div className="mt-3 text-sm font-semibold text-zinc-900">{m.name}</div>
+                <div className="text-xs text-zinc-500 mt-1 leading-relaxed flex-1">{m.description}</div>
+                <div className={classNames('mt-3 text-xs font-medium flex items-center gap-1', m.text)}>
+                  进入 <ArrowRight className="w-3 h-3 transition group-hover:translate-x-0.5" />
+                </div>
+              </Link>
+            );
+          }
+          return (
+            <div
+              key={m.key}
+              className="card p-4 border-dashed flex flex-col cursor-not-allowed grayscale opacity-60 select-none"
+              aria-disabled
             >
-              {section.name}
-            </h2>
-            <div className="space-y-3">
-              <div className="h-px w-16" style={{ background: accentHex, boxShadow: `0 0 8px ${accentHex}` }} />
-              <p className="font-zh text-fg-muted leading-relaxed max-w-sm">
-                {section.tagline}
-              </p>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-zinc-200 text-zinc-400">
+                <Icon className="w-4.5 h-4.5" />
+              </div>
+              <div className="mt-3 text-sm font-semibold text-zinc-400">{m.name}</div>
+              <div className="text-xs text-zinc-400 mt-1 leading-relaxed flex-1">{m.description}</div>
+              <div className="mt-3 text-[10px] font-bold tracking-widest text-zinc-300">SOON</div>
             </div>
+          );
+        })}
+        <div className="card p-4 border-dashed text-zinc-400 flex flex-col items-start cursor-not-allowed opacity-60" aria-disabled>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-zinc-200 text-zinc-400">
+            <Plus className="w-4.5 h-4.5" />
           </div>
-        </div>
-
-        {/* Right: feature cards */}
-        <div className="col-span-12 lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {section.features.map((f, i) => (
-            <FeatureCard key={f.code} feature={f} accent={section.accent} delay={animDelay + 200 + i * 80} />
-          ))}
+          <div className="mt-3 text-sm font-semibold text-zinc-400">新建空白</div>
+          <div className="text-xs text-zinc-400 mt-1 leading-relaxed">不依赖素材，直接动手</div>
+          <div className="mt-3 text-[10px] font-bold tracking-widest text-zinc-300">SOON</div>
         </div>
       </div>
     </section>
   );
 }
 
-// ============== Feature Card ==============
-function FeatureCard({ feature, accent, delay }: { feature: Feature; accent: Accent; delay: number }) {
-  const accentHex = ACCENT_HEX[accent];
-  const isClickable = feature.status !== 'soon';
-  const dotCls =
-    feature.status === 'live'
-      ? accent === 'cyan' ? '' : accent === 'magenta' ? 'mag' : 'acid'
-      : feature.status === 'beta'
-      ? 'amber'
-      : 'gray';
-  const glowCls = accent === 'cyan' ? 'glow-cyan' : accent === 'magenta' ? 'glow-mag' : 'glow-acid';
-
-  const inner = (
-    <div
-      className={`group relative h-full bg-bg-panel/70 border border-edge backdrop-blur-sm p-6 flex flex-col transition-all duration-300 animate-fade-up ${
-        isClickable
-          ? 'cursor-pointer hover:-translate-y-1 hover:border-edge-bright'
-          : 'opacity-60'
-      }`}
-      style={{
-        animationDelay: `${delay}ms`,
-        minHeight: '240px',
-        ...(isClickable ? {} : {}),
-      }}
-    >
-      {/* Hover glow ring */}
-      {isClickable && (
-        <div
-          className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-          style={{
-            boxShadow: `inset 0 0 0 1px ${accentHex}80, 0 0 32px -6px ${accentHex}60`,
-          }}
-        />
-      )}
-
-      {/* Corner ticks */}
-      <CornerTicks color={accentHex} active={isClickable} />
-
-      {/* Top row */}
-      <div className="flex items-center justify-between mb-7 relative">
-        <div className="flex items-center gap-2">
-          <span className={`status-dot ${dotCls}`} />
-          <span className="font-mono text-[10px] uppercase tracking-widest2 text-fg-muted">
-            {feature.status === 'live' ? 'LIVE' : feature.status === 'beta' ? 'BETA' : 'SOON'}
-          </span>
-        </div>
-        <span className="tagged text-fg-faint">
-          &lt;{feature.code}/&gt;
-        </span>
+/* === 3. 所有能力 === */
+function AllFeatures() {
+  return (
+    <section>
+      <SectionHeader title="所有能力" subtitle="灰色虚框 = 尚未开放，仅展示在路线上" />
+      <div className="space-y-5 sm:space-y-6">
+        {SECTIONS.map((key) => (
+          <ModuleFeatureGrid key={key} mKey={key} />
+        ))}
       </div>
+    </section>
+  );
+}
 
-      {/* Title */}
-      <h3 className="font-zh font-bold text-3xl text-fg leading-tight mb-3 tracking-tightish">
-        {feature.zh}
-      </h3>
-
-      <p className="text-sm text-fg-muted leading-relaxed">{feature.desc}</p>
-
-      {/* Bottom */}
-      <div className="mt-auto pt-6 flex items-center justify-between">
-        {isClickable ? (
-          <>
-            <span
-              className={`font-mono text-[11px] uppercase tracking-widest2 transition-colors ${glowCls}`}
-              style={{ color: accentHex }}
-            >
-              ENGAGE
-            </span>
-            <span
-              className="font-mono text-xl transition-transform duration-300 group-hover:translate-x-1"
-              style={{ color: accentHex, textShadow: `0 0 12px ${accentHex}` }}
-            >
-              →
-            </span>
-          </>
+function ModuleFeatureGrid({ mKey }: { mKey: Exclude<ModuleKey, 'home'> }) {
+  const m = MODULES[mKey];
+  const cards = HOME_CARDS[mKey];
+  const moduleLive = MODULE_LIVE[mKey];
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 mb-2.5 px-0.5">
+        <span className={classNames('w-1 h-3.5 rounded-sm', moduleLive ? m.bg : 'bg-zinc-300')} />
+        <h3 className={classNames('text-sm font-bold tracking-tight', moduleLive ? m.text : 'text-zinc-400')}>{m.name}</h3>
+        <span className="text-xs text-zinc-500">· {m.description}</span>
+        {moduleLive ? (
+          <Link to={m.path} className="ml-auto text-xs text-zinc-500 hover:text-zinc-900">
+            打开 {m.name} →
+          </Link>
         ) : (
-          <span className="font-mono text-[10px] uppercase tracking-widest2 text-fg-dim">
-            STANDBY
-          </span>
+          <span className="ml-auto text-[10px] font-bold tracking-widest text-zinc-300">SOON</span>
         )}
+      </div>
+      <div className="grid gap-2.5 sm:gap-3 grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {cards.map((c, i) => (
+          <FeatureCard key={i} card={c} module={mKey} />
+        ))}
       </div>
     </div>
   );
-
-  if (isClickable) {
-    return <Link to={feature.to}>{inner}</Link>;
-  }
-  return inner;
 }
 
-// ============== CornerTicks ==============
-function CornerTicks({ color, active }: { color: string; active: boolean }) {
-  const c = active ? color : '#2D3A56';
-  const Tick = ({ pos }: { pos: string }) => (
-    <span
-      className="absolute pointer-events-none"
-      style={{ ...positionMap[pos], color: c }}
-    >
-      <span className="block w-2 h-px" style={{ background: c }} />
-      <span className="block w-px h-2 -mt-px" style={{ background: c, marginLeft: pos.includes('r') ? 'calc(100% - 1px)' : 0 }} />
-    </span>
-  );
-  return (
-    <>
-      <Tick pos="tl" />
-      <Tick pos="tr" />
-      <Tick pos="bl" />
-      <Tick pos="br" />
-    </>
-  );
-}
-const positionMap: Record<string, React.CSSProperties> = {
-  tl: { top: 0, left: 0 },
-  tr: { top: 0, right: 0, transform: 'scaleX(-1)' },
-  bl: { bottom: 0, left: 0, transform: 'scaleY(-1)' },
-  br: { bottom: 0, right: 0, transform: 'scale(-1)' },
-};
+function FeatureCard({ card, module: mKey }: { card: HomeCard; module: Exclude<ModuleKey, 'home'> }) {
+  const m = MODULES[mKey];
+  const brand = card.brand ? BRANDS[card.brand] : null;
+  const isPlaceholder = card.char === '+';
+  const isLive = card.status === 'live' && !!card.to;
+  const BrandIcon = brand?.Icon;
 
-// ============== TopNav ==============
-function TopNav({ clock }: { clock: string }) {
-  return (
-    <header className="border-b border-edge bg-bg/80 backdrop-blur-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-8 h-14 flex items-center justify-between">
-        <Link to="/" className="flex items-baseline gap-3 group">
-          <span className="font-mono text-fg-faint group-hover:text-cyan transition-colors text-sm">&lt;</span>
-          <span className="font-sans font-bold text-lg tracking-tightish text-fg group-hover:glow-cyan transition-all">
-            STUDIO
-          </span>
-          <span className="font-mono text-fg-faint group-hover:text-cyan transition-colors text-sm">/&gt;</span>
-          <span className="font-zh text-fg-muted text-xs ml-2">内容工坊</span>
-        </Link>
-
-        <nav className="flex items-center gap-7 font-mono text-[11px] uppercase tracking-widest2">
-          <Link to="/" className="text-cyan glow-cyan">HOME</Link>
-          <Link to="/wechat/feeds" className="text-fg-muted hover:text-cyan transition-colors">WORKBENCH</Link>
-          <Link to="/settings" className="text-fg-muted hover:text-cyan transition-colors">SETTINGS</Link>
-          <div className="flex items-center gap-2 ml-3 pl-3 border-l border-edge text-fg-faint">
-            <span className="status-dot" />
-            <span className="tabular">{clock}</span>
+  if (isLive) {
+    const iconBg = brand ? brand.bg : m.bg;
+    return (
+      <Link
+        to={card.to!}
+        className="card p-3 sm:p-3.5 min-h-[92px] flex flex-col transition group hover:-translate-y-0.5 hover:shadow-sm hover:border-zinc-300"
+      >
+        <div className="flex items-start gap-2.5 relative">
+          <div
+            className={classNames(
+              'w-8 h-8 rounded-md flex items-center justify-center text-white font-bold text-sm shrink-0',
+              iconBg,
+            )}
+          >
+            {BrandIcon ? <BrandIcon className="w-4 h-4" /> : card.char}
           </div>
-        </nav>
+          <h4 className="text-sm font-bold leading-snug pt-1 text-zinc-900">{card.title}</h4>
+          <span className="absolute top-0 right-0 px-1.5 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold tracking-wider flex items-center">
+            LIVE
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-zinc-500 leading-relaxed line-clamp-2">{card.desc}</p>
+      </Link>
+    );
+  }
+
+  // SOON / disabled
+  return (
+    <div
+      className="card p-3 sm:p-3.5 min-h-[92px] flex flex-col border-dashed cursor-not-allowed opacity-60 grayscale select-none"
+      aria-disabled
+    >
+      <div className="flex items-start gap-2.5 relative">
+        <div className="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 font-bold text-sm shrink-0 bg-zinc-200">
+          {BrandIcon ? <BrandIcon className="w-4 h-4" /> : isPlaceholder ? '+' : card.char}
+        </div>
+        <h4 className="text-sm font-bold leading-snug pt-1 text-zinc-400">{card.title}</h4>
+        <span className="absolute top-0 right-0 text-[9px] text-zinc-300 font-bold tracking-wider">SOON</span>
       </div>
-    </header>
+      <p className="mt-2 text-xs text-zinc-400 leading-relaxed line-clamp-2">{card.desc}</p>
+    </div>
   );
 }
 
-// ============== Divider ==============
-function Divider() {
+/* === 4. 最近草稿（真实接口） === */
+function RecentDrafts() {
+  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listDrafts()
+      .then((d) => {
+        if (alive) setDrafts(d);
+      })
+      .catch((e) => {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
-    <div className="max-w-7xl mx-auto px-8">
-      <div className="hairline" />
+    <section>
+      <SectionHeader title="最近改写" subtitle="本地保存的草稿（来自 /studio/drafts）" />
+      <div className="card">
+        <div className="px-4 sm:px-5 py-3 border-b border-zinc-200 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-900 flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-zinc-400" />
+            草稿箱
+          </h2>
+          <span className="text-xs text-zinc-500 tabular">
+            共 {drafts?.length ?? '...'} 条
+          </span>
+        </div>
+        {error && (
+          <div className="px-4 sm:px-5 py-6 text-sm text-rose-600">
+            读取草稿失败：{error}
+            <div className="text-xs text-zinc-500 mt-1">检查后端 /studio 是否在 5174 端口运行</div>
+          </div>
+        )}
+        {!error && drafts === null && (
+          <div className="px-4 sm:px-5 py-6 text-sm text-zinc-400">读取中…</div>
+        )}
+        {!error && drafts && drafts.length === 0 && (
+          <div className="px-4 sm:px-5 py-6 text-sm text-zinc-400 flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            还没有草稿。去公众号挑一篇改写一下吧。
+          </div>
+        )}
+        {!error && drafts && drafts.length > 0 && (
+          <ul className="divide-y divide-zinc-100">
+            {drafts.slice(0, 8).map((d) => (
+              <li key={d.id} className="px-4 sm:px-5 py-3 flex items-center gap-3 hover:bg-zinc-50/60 transition">
+                <span
+                  className={classNames(
+                    'chip text-[10px]',
+                    d.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700',
+                  )}
+                >
+                  {d.status === 'published' ? '已发布' : '草稿'}
+                </span>
+                <span className="flex-1 text-sm text-zinc-800 truncate">
+                  {d.rewrittenTitle || d.sourceTitle}
+                </span>
+                <span className="text-xs text-zinc-400 shrink-0">{d.sourceAuthor}</span>
+                <span className="text-xs text-zinc-400 shrink-0 tabular">{formatDate(d.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  } catch {
+    return '';
+  }
+}
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="mb-3 px-0.5">
+      <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
+      {subtitle && <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p>}
     </div>
   );
 }

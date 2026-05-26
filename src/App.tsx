@@ -1,30 +1,25 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import AppShell from './layout/AppShell';
 import Home from './pages/Home';
-import Workbench from './pages/Workbench';
-import Placeholder from './pages/Placeholder';
+import LibraryWeixin from './pages/library/Weixin';
+import TextRewrite from './pages/text/Rewrite';
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route element={<AppShell />}>
+        <Route path="/" element={<Home />} />
 
-      {/* WeChat workbench (all share one component, view derived from URL) */}
-      <Route path="/wechat/feeds" element={<Workbench />} />
-      <Route path="/wechat/feeds/:sourceId" element={<Workbench />} />
-      <Route path="/wechat/drafts" element={<Workbench />} />
-      <Route path="/wechat/published" element={<Workbench />} />
-      <Route path="/settings" element={<Workbench />} />
+        {/* 唯二的两个真功能 */}
+        <Route path="/library" element={<Navigate to="/library/weixin" replace />} />
+        <Route path="/library/weixin" element={<LibraryWeixin />} />
 
-      {/* Placeholders for future platforms */}
-      <Route path="/xhs/feeds" element={<Placeholder />} />
-      <Route path="/xhs/rewrite" element={<Placeholder />} />
-      <Route path="/xhs/generate" element={<Placeholder />} />
-      <Route path="/douyin/feeds" element={<Placeholder />} />
-      <Route path="/douyin/script" element={<Placeholder />} />
-      <Route path="/douyin/avatar" element={<Placeholder />} />
+        <Route path="/text" element={<Navigate to="/text/rewrite" replace />} />
+        <Route path="/text/rewrite" element={<TextRewrite />} />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+        {/* 其他全部回首页 */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
     </Routes>
   );
 }

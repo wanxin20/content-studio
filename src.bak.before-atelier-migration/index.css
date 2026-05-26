@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Geist', 'Noto Sans SC', 'HarmonyOS Sans SC', system-ui, sans-serif;
+    background: #070A12;
+    color: #E2E8F0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'ss01', 'ss02', 'cv11';
+    overflow-x: hidden;
+  }
+
+  ::selection { background: rgba(0, 229, 255, 0.3); color: #fff; }
+
+  /* Custom scrollbar — thin, sci-fi */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #0E1320; }
+  ::-webkit-scrollbar-thumb {
+    background: #2D3A56;
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #3D4E78; }
+}
+
+@layer components {
+  /* Engineering blueprint grid */
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(45, 58, 86, 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(45, 58, 86, 0.18) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: 0 0;
+  }
+  .grid-bg-fine {
+    background-image:
+      linear-gradient(to right, rgba(45, 58, 86, 0.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(45, 58, 86, 0.10) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+
+  /* Subtle scan line texture */
+  .scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0, 229, 255, 0.025) 2px,
+      rgba(0, 229, 255, 0.025) 3px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Vertical scan line that drifts */
+  .scan-line {
+    position: absolute;
+    inset-x: 0;
+    height: 80px;
+    background: linear-gradient(to bottom, transparent, rgba(0, 229, 255, 0.04), transparent);
+    pointer-events: none;
+    animation: scan 12s linear infinite;
+    z-index: 1;
+  }
+
+  /* Hairline divider with optional glow */
+  .hairline {
+    height: 1px;
+    background: linear-gradient(to right, transparent, #1F2A40 12%, #1F2A40 88%, transparent);
+  }
+  .hairline-glow {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(0, 229, 255, 0.6) 30%, rgba(0, 229, 255, 0.6) 70%, transparent);
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+  }
+
+  /* Bracket label like [ DATA ] */
+  .bracket {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .bracket::before { content: '['; opacity: 0.55; margin-right: 0.35em; }
+  .bracket::after  { content: ']'; opacity: 0.55; margin-left: 0.35em; }
+
+  /* Tag like <SUBSCRIBE/> */
+  .tagged {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+  }
+
+  /* Tiny pulsing status indicator */
+  .status-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #00E5FF;
+    box-shadow: 0 0 10px #00E5FF;
+    animation: pulseDot 2s ease-in-out infinite;
+  }
+  .status-dot.amber { background: #FFB800; box-shadow: 0 0 10px #FFB800; }
+  .status-dot.gray  { background: #475569; box-shadow: none; animation: none; }
+  .status-dot.acid  { background: #A3FF12; box-shadow: 0 0 10px #A3FF12; }
+  .status-dot.mag   { background: #FF2D55; box-shadow: 0 0 10px #FF2D55; }
+
+  /* Glow text */
+  .glow-cyan  { text-shadow: 0 0 16px rgba(0, 229, 255, 0.50); }
+  .glow-mag   { text-shadow: 0 0 16px rgba(255, 45, 85, 0.50); }
+  .glow-acid  { text-shadow: 0 0 16px rgba(163, 255, 18, 0.50); }
+  .glow-amber { text-shadow: 0 0 16px rgba(255, 184, 0, 0.55); }
+
+  /* Corner notch decoration */
+  .notched {
+    --notch: 12px;
+    clip-path: polygon(
+      var(--notch) 0, 100% 0, 100% calc(100% - var(--notch)),
+      calc(100% - var(--notch)) 100%, 0 100%, 0 var(--notch)
+    );
+  }
+
+  /* Preview body markdown rendering for dark theme */
+  .preview-body p { margin: 12px 0; line-height: 1.85; color: #CBD5E1; }
+  .preview-body img { max-width: 100%; height: auto; margin: 12px 0; border: 1px solid #1F2A40; }
+  .preview-body pre {
+    background: #0E1320;
+    border: 1px solid #1F2A40;
+    padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.6;
+    font-family: 'Geist Mono', monospace;
+    color: #E2E8F0;
+  }
+  .preview-body a {
+    color: #00E5FF; text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: rgba(0, 229, 255, 0.4);
+  }
+  .preview-body h2, .preview-body h3 {
+    font-family: 'Geist', 'Noto Sans SC', sans-serif;
+    color: #E2E8F0;
+    margin-top: 28px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .preview-body code {
+    background: #0E1320; border: 1px solid #1F2A40; padding: 1px 6px;
+    font-family: 'Geist Mono', monospace; font-size: 0.92em; color: #00E5FF;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+@keyframes particlePulse {
+  0%, 100% {
+    opacity: 0.15;
+    transform: translateY(0) scale(0.8);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translateY(-6px) scale(1.15);
+  }
+}

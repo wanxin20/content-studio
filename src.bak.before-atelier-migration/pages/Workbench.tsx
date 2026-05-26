@@ -9,12 +9,8 @@ import {
   deleteDraft,
   publishDraft,
   studioHealth,
+  listSources,
 } from '../lib/studio';
-
-const SOURCES: Source[] = [
-  { id: 'MP_WXS_3223096120', name: '数字生命卡兹克', platform: 'wechat' },
-  { id: 'MP_WXS_FEATURED_ARTICLES', name: '精选文章', platform: 'wechat' },
-];
 
 const DEFAULT_PROMPT_HINT =
   '留空使用默认改写 prompt(亲切口语化、重拟标题、保留图片和链接)。或自定义:「改写成小红书风格」「改写成读书笔记摘要」。';
@@ -24,12 +20,12 @@ type ViewKind = 'feeds' | 'drafts' | 'published' | 'settings';
 function pathToView(pathname: string): { kind: ViewKind; sourceId?: string } {
   if (pathname.startsWith('/wechat/feeds')) {
     const m = pathname.match(/^\/wechat\/feeds\/(.+)$/);
-    return { kind: 'feeds', sourceId: m?.[1] || SOURCES[0].id };
+    return { kind: 'feeds', sourceId: m?.[1] };
   }
   if (pathname.startsWith('/wechat/drafts')) return { kind: 'drafts' };
   if (pathname.startsWith('/wechat/published')) return { kind: 'published' };
   if (pathname.startsWith('/settings')) return { kind: 'settings' };
-  return { kind: 'feeds', sourceId: SOURCES[0].id };
+  return { kind: 'feeds' };
 }
 
 export default function Workbench() {
@@ -44,6 +40,10 @@ export default function Workbench() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [llmInfo, setLlmInfo] = useState<{ model: string; name: string } | null>(null);
   const [clock, setClock] = useState('');
+  const [sources, setSources] = useState<Source[]>([]);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const [sourcesHint, setSourcesHint] = useState<string | null>(null);
+  const [wechatExpanded, setWechatExpanded] = useState(true);
 
   const [rewriteState, setRewriteState] = useState<
     | null
@@ -53,14 +53,26 @@ export default function Workbench() {
     | { article: Article; status: 'error'; prompt: string; error: string }
   >(null);
 
-  const currentSource = useMemo(
-    () => (view.kind === 'feeds' ? SOURCES.find((s) => s.id === view.sourceId) || null : null),
-    [view],
-  );
+  const currentSource = useMemo(() => {
+    if (view.kind !== 'feeds') return null;
+    if (sources.length === 0) return null;
+    if (view.sourceId) {
+      return sources.find((s) => s.id === view.sourceId) || sources[0] || null;
+    }
+    return sources[0] || null;
+  }, [view, sources]);
 
   useEffect(() => {
     studioHealth().then((h) => h && setLlmInfo(h.llm));
     listDrafts().then(setDrafts).catch(() => {});
+    listSources().then((r) => {
+      if (r.ok && r.sources) {
+        setSources(r.sources.map((s) => ({ id: s.id, name: s.name, platform: s.platform })));
+      } else {
+        setSourcesError(r.error || '加载订阅源失败');
+        if (r.hint) setSourcesHint(r.hint);
+      }
+    });
     const tick = () => {
       const d = new Date();
       setClock(
@@ -148,10 +160,14 @@ export default function Workbench() {
       <TopBar llmInfo={llmInfo} clock={clock} />
       <div className="flex flex-1 overflow-hidden relative z-10">
         <Sidebar
-          sources={SOURCES}
+          sources={sources}
+          sourcesError={sourcesError}
+          sourcesHint={sourcesHint}
           view={view}
           draftCount={draftCount}
           publishedCount={publishedCount}
+          wechatExpanded={wechatExpanded}
+          onToggleWechat={() => setWechatExpanded((v) => !v)}
         />
         <main className="flex-1 flex flex-col overflow-hidden bg-bg">
           {view.kind === 'feeds' && currentSource && (
@@ -257,33 +273,79 @@ function TopBar({ llmInfo, clock }: { llmInfo: { model: string; name: string } |
 // ============== Sidebar ==============
 interface SidebarProps {
   sources: Source[];
+  sourcesError: string | null;
+  sourcesHint: string | null;
   view: { kind: ViewKind; sourceId?: string };
   draftCount: number;
   publishedCount: number;
+  wechatExpanded: boolean;
+  onToggleWechat: () => void;
 }
-function Sidebar({ sources, view, draftCount, publishedCount }: SidebarProps) {
+function Sidebar({
+  sources, sourcesError, sourcesHint, view, draftCount, publishedCount,
+  wechatExpanded, onToggleWechat,
+}: SidebarProps) {
   const wechatSources = sources.filter((s) => s.platform === 'wechat');
   return (
     <aside className="w-64 bg-bg-panel/60 backdrop-blur-sm border-r border-edge flex flex-col overflow-y-auto flex-shrink-0">
       <SectionTitle>SOURCES</SectionTitle>
-      <NavGroupLabel icon="◉" label="微信公众号" active={view.kind === 'feeds'} accentClass="text-cyan" />
-      <div className="pl-9 text-sm pb-3">
-        {wechatSources.map((s) => (
-          <Link
-            key={s.id}
-            to={`/wechat/feeds/${s.id}`}
-            className={`block px-2 py-1.5 font-zh transition-colors text-sm ${
-              view.sourceId === s.id
-                ? 'text-cyan glow-cyan font-medium border-l border-cyan -ml-px pl-2.5'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            <span className="font-mono text-fg-dim mr-2">·</span>{s.name}
-          </Link>
-        ))}
-      </div>
-      <DisabledItem icon="◐" label="小红书" accentColor="#FF1F8A" />
-      <DisabledItem icon="◑" label="抖音" accentColor="#9FFF1F" />
+
+      {/* 微信公众号 - 可折叠头 */}
+      <button
+        onClick={onToggleWechat}
+        className={`flex items-center px-6 py-2 gap-2 text-sm w-full text-left transition-colors ${
+          view.kind === 'feeds' ? 'text-cyan font-medium' : 'text-fg hover:bg-bg-elev/50'
+        }`}
+      >
+        <span
+          className="font-mono text-[10px] text-fg-faint transition-transform duration-200 inline-block w-3"
+          style={{ transform: wechatExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+        >
+          ▶
+        </span>
+        <span className="font-mono">◉</span>
+        <span className="font-zh">微信公众号</span>
+        <span className="ml-auto font-mono text-[10px] text-fg-faint tabular">
+          {sourcesError ? '!' : sources.length > 0 ? String(wechatSources.length).padStart(2, '0') : '—'}
+        </span>
+      </button>
+
+      {wechatExpanded && (
+        <div className="pl-9 text-sm pb-3">
+          {sourcesError && (
+            <div className="px-2 py-2 mr-2 text-[11px] leading-relaxed">
+              <div className="text-rose font-mono mb-1">⚠ LOAD FAILED</div>
+              <div className="text-fg-faint font-zh">{sourcesError}</div>
+              {sourcesHint && (
+                <div className="text-fg-dim font-zh mt-2 text-[10px]">{sourcesHint}</div>
+              )}
+            </div>
+          )}
+          {!sourcesError && wechatSources.length === 0 && (
+            <div className="px-2 py-3 text-[11px] text-fg-faint font-zh leading-relaxed">
+              暂无订阅。<br />
+              <span className="text-fg-dim">到 we-mp-rss 管理后台添加公众号。</span>
+            </div>
+          )}
+          {wechatSources.map((s) => (
+            <Link
+              key={s.id}
+              to={`/wechat/feeds/${s.id}`}
+              title={s.name}
+              className={`block px-2 py-1.5 font-zh transition-colors text-sm truncate ${
+                view.sourceId === s.id
+                  ? 'text-cyan glow-cyan font-medium border-l border-cyan -ml-px pl-2.5'
+                  : 'text-fg-muted hover:text-fg'
+              }`}
+            >
+              <span className="font-mono text-fg-dim mr-2">·</span>{s.name}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <DisabledItem icon="◐" label="小红书" accentColor="#FF2D55" />
+      <DisabledItem icon="◑" label="抖音" accentColor="#A3FF12" />
 
       <SectionTitle>WORK</SectionTitle>
       <NavLink to="/wechat/drafts" icon="✎" label="改写中" code="DRAFTS" count={draftCount} active={view.kind === 'drafts'} />
@@ -304,15 +366,6 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
       <span>/</span>
       <span>{children}</span>
       <span className="flex-1 h-px bg-edge/50 ml-1" />
-    </div>
-  );
-}
-
-function NavGroupLabel({ icon, label, active, accentClass }: { icon: string; label: string; active: boolean; accentClass: string }) {
-  return (
-    <div className={`flex items-center px-6 py-2 gap-3 text-sm ${active ? `${accentClass} font-medium` : 'text-fg'}`}>
-      <span className="w-4 text-center font-mono">{icon}</span>
-      <span className="font-zh">{label}</span>
     </div>
   );
 }
