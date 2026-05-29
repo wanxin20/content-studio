@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Anthropic from '@anthropic-ai/sdk';
+import { listImageProviders, generateImage, type ImageProviderId } from './imageProviders';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -187,6 +188,207 @@ app.get('/studio/sources', async (_req, res) => {
     res.json({ ok: true, sources });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    res.status(502).json({ ok: false, error: msg });
+  }
+});
+
+// ============== 小红书搜索 (proxied from TikHub app_v2) ==============
+const TIKHUB_BASE_URL = (process.env.TIKHUB_BASE_URL || 'https://api.tikhub.io').replace(/\/$/, '');
+const TIKHUB_API_KEY = process.env.TIKHUB_API_KEY || '';
+
+interface XhsCacheEntry {
+  ts: number;
+  payload: unknown;
+}
+const xhsCache = new Map<string, XhsCacheEntry>();
+const XHS_CACHE_TTL = 10 * 60_000; // 10 分钟:小红书搜索结果变化不快,且每次调用都要钱,缓存省额度 + 防 StrictMode 双扣
+
+function pickImages(note: any): string[] {
+  const list = note?.images_list;
+  if (Array.isArray(list)) {
+    return list.map((im: any) => im?.url || im?.url_size_large || '').filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeXhsNote(item: any) {
+  const note = item?.note ?? item ?? {};
+  const id = String(note.id ?? item.id ?? '');
+  const token = note.xsec_token ?? '';
+  const images = pickImages(note);
+  const idx = Number.isInteger(note?.cover_image_index) ? note.cover_image_index : 0;
+  const cover = images[idx] || images[0] || '';
+  return {
+    id,
+    title: String(note.title ?? note.display_title ?? '').trim(),
+    desc: String(note.desc ?? '').trim(),
+    type: note.type === 'video' ? 'video' : 'normal',
+    cover,
+    images,
+    author: String(note.user?.nickname ?? '').trim(),
+    authorAvatar: note.user?.images ?? '',
+    authorId: String(note.user?.userid ?? note.user?.user_id ?? ''),
+    liked: Number(note.liked_count ?? 0),
+    collected: Number(note.collected_count ?? 0),
+    comments: Number(note.comments_count ?? 0),
+    timestamp: Number(note.timestamp ?? 0) * (String(note.timestamp ?? '').length <= 10 ? 1000 : 1),
+    xsecToken: token,
+    link: id ? `https://www.xiaohongshu.com/explore/${id}${token ? `?xsec_token=${token}` : ''}` : '',
+  };
+}
+
+app.get('/studio/xhs/search', async (req, res) => {
+  const keyword = String(req.query.keyword ?? '').trim();
+  const page = String(req.query.page ?? '1');
+  const sort = String(req.query.sort ?? 'general');
+  const noteType = String(req.query.note_type ?? '不限');
+  const searchId = String(req.query.search_id ?? '');
+  const searchSessionId = String(req.query.search_session_id ?? '');
+  if (!keyword) return res.status(400).json({ ok: false, error: 'keyword required' });
+  if (!TIKHUB_API_KEY) {
+    return res.status(500).json({ ok: false, error: '后端未配置 TIKHUB_API_KEY(在 .env 设置)' });
+  }
+
+  const cacheKey = `${keyword}|${page}|${sort}|${noteType}`;
+  const hit = xhsCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < XHS_CACHE_TTL) {
+    return res.json({ ...(hit.payload as object), cached: true });
+  }
+
+  try {
+    const url = new URL(`${TIKHUB_BASE_URL}/api/v1/xiaohongshu/app_v2/search_notes`);
+    url.searchParams.set('keyword', keyword);
+    url.searchParams.set('page', page);
+    url.searchParams.set('sort_type', sort);
+    url.searchParams.set('note_type', noteType);
+    // 翻页:把首页返回的 search_id / search_session_id 透传回去
+    if (searchId) url.searchParams.set('search_id', searchId);
+    if (searchSessionId) url.searchParams.set('search_session_id', searchSessionId);
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${TIKHUB_API_KEY}` } });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const detail = (body as any)?.detail?.message_zh || (body as any)?.detail?.message || JSON.stringify(body).slice(0, 200);
+      return res.status(r.status === 402 ? 402 : 502).json({
+        ok: false,
+        error: `TikHub ${r.status}: ${detail}`,
+        hint: r.status === 402 ? 'TikHub 余额不足,需充值真实余额(免费额度不支持此接口)' : undefined,
+      });
+    }
+    const inner = (body as any)?.data ?? {};
+    const items: any[] = inner.items ?? inner.data?.items ?? [];
+    const notes = items.map(normalizeXhsNote).filter((n) => n.id);
+    const payload = {
+      ok: true,
+      notes,
+      page: Number(page),
+      search_id: inner.search_id ?? null,
+      search_session_id: inner.search_session_id ?? null,
+      next_page: inner.next_page ?? null,
+    };
+    xhsCache.set(cacheKey, { ts: Date.now(), payload });
+    console.log(`[XHS] ✓ search "${keyword}" p${page} → ${notes.length} notes`);
+    res.json(payload);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[XHS] error:', msg);
+    res.status(502).json({ ok: false, error: msg });
+  }
+});
+
+// ============== 小红书图文生成 ==============
+// 第一步:用 LLM 按 baoyu-xhs-images 方法论生成一组图片提示词。
+// 风格/布局是「单一事实源」:后端持有 key+label(给前端下拉)+desc(喂 LLM),
+// 前端通过 /studio/image/providers 拉 key+label,不再各持一份。
+const XHS_STYLE_DEFS = [
+  { key: 'notion', label: 'Notion 知识卡', desc: '极简手绘线条、知识卡片感、理性高级，适合干货/概念' },
+  { key: 'cute', label: '可爱甜美', desc: '可爱甜美、少女风、圆润字体、粉嫩配色、小贴纸装饰，经典小红书风' },
+  { key: 'fresh', label: '清新自然', desc: '清新自然、留白干净、低饱和、原木/绿植元素' },
+  { key: 'warm', label: '温暖治愈', desc: '温暖治愈、暖色调、柔和光感、亲切手写感' },
+  { key: 'bold', label: '高冲击', desc: '高冲击、强对比、超大标题、醒目色块，适合避坑/提醒' },
+  { key: 'minimal', label: '极简高级', desc: '极简高级、大量留白、克制配色、精致排版，商务感' },
+  { key: 'retro', label: '复古', desc: '复古怀旧、做旧质感、经典色卡、胶片感' },
+  { key: 'pop', label: '波普潮流', desc: '波普潮流、撞色、活力四射、夸张元素' },
+  { key: 'chalkboard', label: '黑板教学', desc: '黑板彩色粉笔字、教学感，适合教程/课堂' },
+  { key: 'study-notes', label: '手写笔记', desc: '真实手写笔记照片风、蓝笔+红批注+黄荧光笔' },
+  { key: 'screen-print', label: '丝网海报', desc: '丝网印刷海报风、半调网点、有限配色、符号化叙事' },
+] as const;
+const XHS_LAYOUT_DEFS = [
+  { key: 'balanced', label: '标准', desc: '标准内容布局(3-4 个点)' },
+  { key: 'sparse', label: '极简', desc: '极简信息、最大冲击(1-2 个点)' },
+  { key: 'dense', label: '密集', desc: '高信息密度、知识卡片(5-8 个点)' },
+  { key: 'list', label: '清单', desc: '清单/排行(4-7 条)' },
+  { key: 'comparison', label: '对比', desc: '左右对比' },
+  { key: 'flow', label: '流程', desc: '流程/时间线(3-6 步)' },
+  { key: 'mindmap', label: '导图', desc: '中心放射思维导图(4-8 分支)' },
+  { key: 'quadrant', label: '四象限', desc: '四象限/分区' },
+] as const;
+const XHS_STYLES: Record<string, string> = Object.fromEntries(XHS_STYLE_DEFS.map((s) => [s.key, s.desc]));
+const XHS_LAYOUTS: Record<string, string> = Object.fromEntries(XHS_LAYOUT_DEFS.map((l) => [l.key, l.desc]));
+
+app.get('/studio/image/providers', (_req, res) => {
+  res.json({
+    ok: true,
+    providers: listImageProviders(),
+    styles: XHS_STYLE_DEFS.map(({ key, label }) => ({ key, label })),
+    layouts: XHS_LAYOUT_DEFS.map(({ key, label }) => ({ key, label })),
+  });
+});
+
+app.post('/studio/image/prompts', async (req, res) => {
+  const { topic, style = 'notion', layout = 'balanced', count = 4, extra = '' } = req.body as {
+    topic?: string; style?: string; layout?: string; count?: number; extra?: string;
+  };
+  if (!topic || !topic.trim()) return res.status(400).json({ ok: false, error: 'topic required' });
+  const n = Math.min(10, Math.max(2, Number(count) || 4));
+  const styleDesc = XHS_STYLES[style] || XHS_STYLES.notion;
+  const layoutDesc = XHS_LAYOUTS[layout] || XHS_LAYOUTS.balanced;
+
+  const sys = `你是小红书图文设计专家。根据主题，产出一组共 ${n} 张图片的「生图提示词」。
+结构：第 1 张是封面(cover，强钩子、视觉冲击、sparse)，中间是内容(content)，最后 1 张是结尾(ending，行动号召/总结)。
+统一视觉风格：${style} — ${styleDesc}。
+信息布局倾向：${layout} — ${layoutDesc}。
+要求：
+- 每张提示词要详细到可直接喂给文生图模型：画面构图、主体、配色、装饰、画面内的中文文字内容(小红书图片通常带中文标题/要点)。
+- 全系列风格、配色、字体保持一致。
+- 提示词用中文写。
+${extra ? `- 额外要求：${extra}` : ''}
+只输出 JSON，不要解释。格式：
+{"prompts":[{"role":"cover"|"content"|"ending","title":"该图简短标题","prompt":"详细生图提示词"}]}`;
+
+  try {
+    const resp = await anthropic.messages.create({
+      model: profile.model,
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: `${sys}\n\n主题：${topic.trim()}` }],
+    });
+    let text = '';
+    for (const blk of resp.content) if (blk.type === 'text') text += blk.text;
+    // 容错:剥离可能的 ```json 包裹
+    const m = text.match(/\{[\s\S]*\}/);
+    const parsed = m ? JSON.parse(m[0]) : { prompts: [] };
+    const prompts = Array.isArray(parsed.prompts) ? parsed.prompts.slice(0, n) : [];
+    console.log(`[IMG] ✓ prompts "${topic.trim().slice(0, 20)}" style=${style} → ${prompts.length} 条`);
+    res.json({ ok: true, prompts, style, layout });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[IMG] prompts error:', msg);
+    res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+// 第二步:按提示词调生图模型
+app.post('/studio/image/generate', async (req, res) => {
+  const { prompt, provider = 'dashscope', model, ar = '3:4', quality = '2k' } = req.body as {
+    prompt?: string; provider?: ImageProviderId; model?: string; ar?: string; quality?: 'normal' | '2k';
+  };
+  if (!prompt || !prompt.trim()) return res.status(400).json({ ok: false, error: 'prompt required' });
+  try {
+    const out = await generateImage({ provider, prompt: prompt.trim(), model, ar, quality });
+    console.log(`[IMG] ✓ generate ${provider}/${out.model} ${out.size}`);
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[IMG] generate error:', msg);
     res.status(502).json({ ok: false, error: msg });
   }
 });

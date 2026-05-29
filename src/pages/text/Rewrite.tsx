@@ -62,7 +62,9 @@ export default function TextRewrite() {
   }
 
   const buildPrompt = () => {
-    const base = `请将下面这篇文章改写一遍，保留事实和数据，换一种表达。${style.promptHint}`;
+    const base =
+      `请将下面这篇文章改写一遍，保留事实和数据，换一种表达。${style.promptHint}` +
+      `\n注意：原文中的图片(![](url) 语法)必须原样保留、不要删改，按合适位置放进改写后的正文。`;
     const extra = customPrompt.trim();
     return extra ? `${base}\n\n额外要求：${extra}` : base;
   };

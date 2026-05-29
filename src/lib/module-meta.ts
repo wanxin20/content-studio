@@ -127,7 +127,7 @@ export const MODULE_NAV: Record<Exclude<ModuleKey, 'home'>, NavGroup[]> = {
       label: '平台数据源',
       items: [
         { label: '微信公众号', to: '/library/weixin', status: 'live', brand: 'weixin' },
-        { label: '小红书', status: 'soon', brand: 'xhs' },
+        { label: '小红书', to: '/library/xhs', status: 'live', brand: 'xhs' },
         { label: '抖音', status: 'soon', brand: 'douyin' },
       ],
     },
@@ -157,7 +157,7 @@ export const MODULE_NAV: Record<Exclude<ModuleKey, 'home'>, NavGroup[]> = {
     {
       label: '生成',
       items: [
-        { label: '图片', status: 'soon' },
+        { label: '图片', to: '/multimodal/image', status: 'live' },
         { label: '视频', status: 'soon' },
         { label: '数字人', status: 'soon' },
       ],
@@ -213,7 +213,7 @@ export const HOME_CARDS: Record<Exclude<ModuleKey, 'home'>, HomeCard[]> = {
   library: [
     { char: '热', title: '热点榜', desc: '实时跨平台热门话题聚合 — 含小红书 / 抖音 / 微信 / 微博', status: 'soon' },
     { char: '微', title: '微信公众号', desc: '订阅公众号文章源 — 全文采集 / 改写素材库', to: '/library/weixin', status: 'live', brand: 'weixin' },
-    { char: '红', title: '小红书', desc: '账号 / 话题笔记抓取 — 封面 + 文案 + 互动数据', status: 'soon', brand: 'xhs' },
+    { char: '红', title: '小红书', desc: '关键词搜索笔记 — 封面 + 文案 + 互动数据', to: '/library/xhs', status: 'live', brand: 'xhs' },
     { char: '抖', title: '抖音', desc: '账号 / 话题视频源 — 含播放量 / 点赞数据', status: 'soon', brand: 'douyin' },
     { char: '灵', title: '灵感簿', desc: '私人选题 / 比喻 / 观点的快速记录与分类', status: 'soon' },
   ],
@@ -222,7 +222,7 @@ export const HOME_CARDS: Record<Exclude<ModuleKey, 'home'>, HomeCard[]> = {
     { char: '改', title: '文本改写', desc: '把爆款按你的风格重写 — 极简 / 幽默 / 职场 / 文艺', to: '/text/rewrite', status: 'live' },
   ],
   multimodal: [
-    { char: '图', title: '图片生成', desc: '文生图 / 参考图融合 · SDXL / Flux / DALL·E 3', status: 'soon' },
+    { char: '图', title: '图片生成', desc: '文生图 / 小红书图文 · 通义万象，模型可选', to: '/multimodal/image', status: 'live' },
     { char: '视', title: '视频生成', desc: '首尾帧 + 动作描述 → 4-20s 短片，4 种风格', status: 'soon' },
     { char: '人', title: '数字人合成', desc: '数字人形象 + 文案 + 配音 一键成片', status: 'soon' },
     { char: '音', title: '配音生成', desc: '文本转语音 · 多音色 · 可对口型', status: 'soon' },
@@ -239,8 +239,8 @@ export const HOME_CARDS: Record<Exclude<ModuleKey, 'home'>, HomeCard[]> = {
 
 /** Which top-level modules have at least one live sub-feature. */
 export const MODULE_LIVE: Record<Exclude<ModuleKey, 'home'>, boolean> = {
-  library: true,    // 微信公众号
+  library: true,    // 微信公众号 + 小红书
   text: true,       // 文本改写
-  multimodal: false,
+  multimodal: true, // 小红书图文生成
   manage: false,
 };

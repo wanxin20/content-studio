@@ -160,6 +160,25 @@ export async function studioHealth(): Promise<{ ok: boolean; llm: { name: string
   }
 }
 
+// ============== Shared fetch helpers ==============
+// 统一 fetch → json → {ok:false,error,hint} 兜底,供下面的 {ok} 形态接口复用。
+interface ApiResult { ok: boolean; data?: any; error?: string; hint?: string }
+
+async function studioFetch(path: string, init?: RequestInit): Promise<ApiResult> {
+  try {
+    const resp = await fetch(path, init);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, error: data?.error, hint: data?.hint };
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function jsonPost(body: unknown): RequestInit {
+  return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
 // ============== Sources (proxied from we-mp-rss) ==============
 export interface SourceInfo {
   id: string;
@@ -178,12 +197,107 @@ export interface SourcesResponse {
 }
 
 export async function listSources(): Promise<SourcesResponse> {
-  try {
-    const resp = await fetch('/studio/sources');
-    const data = await resp.json();
-    if (!resp.ok) return { ok: false, error: data?.error, hint: data?.hint };
-    return data;
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  const r = await studioFetch('/studio/sources');
+  return r.ok ? r.data : { ok: false, error: r.error, hint: r.hint };
+}
+
+// ============== 小红书搜索 (proxied from TikHub) ==============
+export interface XhsNote {
+  id: string;
+  title: string;
+  desc: string;
+  type: 'normal' | 'video';
+  cover: string;
+  images: string[];
+  author: string;
+  authorAvatar: string;
+  authorId: string;
+  liked: number;
+  collected: number;
+  comments: number;
+  timestamp: number;
+  xsecToken: string;
+  link: string;
+}
+
+export interface XhsSearchResult {
+  ok: boolean;
+  notes?: XhsNote[];
+  page?: number;
+  search_id?: string | null;
+  search_session_id?: string | null;
+  next_page?: number | null;
+  cached?: boolean;
+  error?: string;
+  hint?: string;
+}
+
+export type XhsNoteType = '不限' | '视频笔记' | '普通笔记';
+
+// 排序在前端做(见 Xhs.tsx)，接口始终取相关性页,不影响计费。
+export async function searchXhsNotes(
+  keyword: string,
+  opts: {
+    page?: number;
+    noteType?: XhsNoteType;
+    searchId?: string | null;
+    searchSessionId?: string | null;
+  } = {},
+): Promise<XhsSearchResult> {
+  const qs = new URLSearchParams({
+    keyword,
+    page: String(opts.page ?? 1),
+    note_type: opts.noteType ?? '不限',
+  });
+  if (opts.searchId) qs.set('search_id', opts.searchId);
+  if (opts.searchSessionId) qs.set('search_session_id', opts.searchSessionId);
+  const r = await studioFetch(`/studio/xhs/search?${qs.toString()}`);
+  return r.ok ? r.data : { ok: false, error: r.error, hint: r.hint };
+}
+
+// ============== 小红书图文生成 ==============
+export interface ImageModelOption { id: string; label: string }
+export interface ImageProviderInfo {
+  id: string;
+  name: string;
+  configured: boolean;
+  models: ImageModelOption[];
+  defaultModel: string;
+  aspectRatios: string[];
+}
+export interface ImagePrompt {
+  role: 'cover' | 'content' | 'ending';
+  title: string;
+  prompt: string;
+}
+
+/** key+label option used by the 风格/布局 selectors (definitions owned by backend). */
+export interface KeyLabel { key: string; label: string }
+
+export interface ImageOptions {
+  providers: ImageProviderInfo[];
+  styles: KeyLabel[];
+  layouts: KeyLabel[];
+}
+
+export async function listImageOptions(): Promise<ImageOptions> {
+  const r = await studioFetch('/studio/image/providers');
+  if (r.ok && r.data?.ok) {
+    return { providers: r.data.providers ?? [], styles: r.data.styles ?? [], layouts: r.data.layouts ?? [] };
   }
+  return { providers: [], styles: [], layouts: [] };
+}
+
+export async function genImagePrompts(input: {
+  topic: string; style: string; layout: string; count: number; extra?: string;
+}): Promise<{ ok: boolean; prompts?: ImagePrompt[]; error?: string }> {
+  const r = await studioFetch('/studio/image/prompts', jsonPost(input));
+  return r.ok ? r.data : { ok: false, error: r.error };
+}
+
+export async function generateImage(input: {
+  prompt: string; provider?: string; model?: string; ar?: string; quality?: 'normal' | '2k';
+}): Promise<{ ok: boolean; url?: string; dataUrl?: string; model?: string; size?: string; error?: string }> {
+  const r = await studioFetch('/studio/image/generate', jsonPost(input));
+  return r.ok ? r.data : { ok: false, error: r.error };
 }
